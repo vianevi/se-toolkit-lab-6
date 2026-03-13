@@ -142,7 +142,7 @@ The file must be non-empty.
    pnpm setup
    ```
 
-4. To update the current shell environment with `pnpm` variables set in the [shell profile](./shell.md#profile),
+4. To update the current shell environment with `pnpm` variables set in the [shell profile](./shell.md#shell-profile),
 
    [run in the `VS Code Terminal`](./vs-code.md#run-a-command-in-the-vs-code-terminal):
 

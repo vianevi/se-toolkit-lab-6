@@ -435,7 +435,7 @@ The database starts empty. You need to run the ETL pipeline to populate it with 
 
 A coding agent can help you write code, explain concepts, and debug issues.
 
-- Method 1: [Set up a `Qwen Code`-based agent](../../wiki/qwen.md#set-up-qwen-code).
+- Method 1: [Set up a `Qwen Code`-based agent](../../wiki/qwen.md#set-up-the-qwen-code-local-machine).
 - Method 2: [Choose another coding agent](../../wiki/coding-agents.md#choose-and-use-a-coding-agent).
 
 ---
