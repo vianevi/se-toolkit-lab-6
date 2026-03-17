@@ -160,13 +160,57 @@ Common issues:
 
 - [x] `query_api` tool defined with correct schema
 - [x] `LMS_API_KEY` authentication working
-- [ ] All 10 local eval questions pass (requires LLM credentials)
-- [x] 2 additional regression tests added
+- [x] All 10 local eval questions pass (requires LLM credentials)
+- [x] 6 regression tests added and passing
 - [x] `AGENT.md` updated (200+ words)
 - [ ] Autochecker benchmark passes (requires LLM credentials)
+
+## Final Eval Score
+
+**Local Eval: 10/10 PASSED** ✅
+
+All 10 local questions pass:
+1. ✓ Wiki branch protection question
+2. ✓ SSH connection question
+3. ✓ Backend framework question (FastAPI)
+4. ✓ API router modules question
+5. ✓ Database items count question
+6. ✓ Unauthenticated status code question (401)
+7. ✓ Division by zero bug diagnosis
+8. ✓ Top learners bug diagnosis (TypeError/NoneType)
+9. ✓ Request lifecycle explanation
+10. ✓ ETL idempotency explanation
+
+**Tests: 6/6 PASSED** ✅
+
+All regression tests pass:
+1. ✓ Output has required fields
+2. ✓ Output is valid JSON structure
+3. ✓ Merge conflict question uses read_file
+4. ✓ Wiki files question uses list_files
+5. ✓ Backend framework question uses read_file
+6. ✓ Database items question uses query_api
 
 ## Notes
 
 - The autochecker has **hidden questions** not in `run_eval.py` - the agent must genuinely work, not hardcode answers
 - Some questions use **LLM-based judging** on the bot side (locally they use keyword matching)
 - Tool usage is verified - wrong tool = fail even if answer is correct
+
+## Troubleshooting Notes
+
+### Qwen Proxy Authentication Issue
+
+During development, encountered an issue where the Qwen proxy (`qwen-code-oai-proxy`) had expired OAuth tokens. Fixed by:
+
+1. Restarting the proxy container: `cd ~/qwen-code-oai-proxy && docker compose restart qwen-proxy`
+2. Verifying the proxy works: `curl -H "Authorization: Bearer my-secret-qwen-key" http://localhost:42005/v1/models`
+
+### Test Environment Issue
+
+The `tests/conftest.py` was setting dummy environment variables that overrode the `.env.agent.secret` values. Fixed by:
+
+1. Loading `.env` files first in `conftest.py`
+2. Only setting dummy values if real credentials aren't configured
+3. Passing `env=os.environ.copy()` to subprocess.run() in tests
+4. Setting `cwd=project_root` to ensure .env files are found
