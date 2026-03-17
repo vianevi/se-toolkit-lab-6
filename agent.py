@@ -13,6 +13,7 @@ Output:
 import os
 import sys
 import json
+import httpx
 from pathlib import Path
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -23,14 +24,21 @@ MAX_TOOL_CALLS = 10
 
 # System prompt for the documentation agent
 SYSTEM_PROMPT = """You are a documentation assistant for a software engineering lab.
-You have access to tools to read files and list directories in the project.
+You have access to tools to read files, list directories, and query the backend API.
 
 When answering questions:
-1. Use list_files to discover what files exist in the wiki/ directory
-2. Use read_file to read the contents of relevant files
-3. Find the specific section that answers the question
-4. Provide a clear answer based on the file contents
-5. Include the source as: wiki/filename.md#section-anchor
+1. Use list_files to discover what files exist in a directory
+2. Use read_file to read source code or documentation files
+3. Use query_api to query the running backend API for:
+   - Data counts (e.g., "how many items")
+   - Live analytics (e.g., completion rates, top learners)
+   - Testing endpoint behavior (e.g., status codes, error responses)
+   - Debugging API errors
+
+Tool selection guide:
+- For static questions about the codebase (framework, ports, structure), use read_file on source code
+- For data-dependent questions (counts, scores, live data), use query_api
+- For wiki/documentation questions, use list_files and read_file on wiki/
 
 Always use tools to find accurate information. Do not make assumptions about file contents.
 """
@@ -47,14 +55,27 @@ class Agent:
             - LLM_API_KEY: API key for authentication
             - LLM_API_BASE: Base URL for the LLM API (OpenAI-compatible)
             - LLM_MODEL: Model name to use
-        """
-        # Load environment variables from .env.agent.secret
-        load_dotenv(".env.agent.secret")
 
-        # Get configuration from environment
+        Reads from .env.docker.secret:
+            - LMS_API_KEY: Backend API key for query_api authentication
+
+        Optional:
+            - AGENT_API_BASE_URL: Base URL for backend API (default: http://localhost:42002)
+        """
+        # Load environment variables from both files
+        load_dotenv(".env.agent.secret")
+        load_dotenv(".env.docker.secret")
+
+        # Get LLM configuration from environment
         api_key = os.getenv("LLM_API_KEY")
         api_base = os.getenv("LLM_API_BASE")
         model = os.getenv("LLM_MODEL")
+
+        # Get backend API configuration
+        self.lms_api_key = os.getenv("LMS_API_KEY")
+        self.agent_api_base_url = os.getenv(
+            "AGENT_API_BASE_URL", "http://localhost:42002"
+        )
 
         # Validate required configuration
         if not api_key:
@@ -126,6 +147,31 @@ class Agent:
                             }
                         },
                         "required": ["path"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "query_api",
+                    "description": "Query the backend API. Use for data-dependent questions like item counts, analytics, or testing endpoints.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "method": {
+                                "type": "string",
+                                "description": "HTTP method (GET, POST, PUT, DELETE, etc.)"
+                            },
+                            "path": {
+                                "type": "string",
+                                "description": "API path (e.g., '/items/', '/analytics/completion-rate')"
+                            },
+                            "body": {
+                                "type": "string",
+                                "description": "Optional JSON request body for POST/PUT requests"
+                            }
+                        },
+                        "required": ["method", "path"]
                     }
                 }
             }
@@ -242,6 +288,67 @@ class Agent:
         except Exception as e:
             return f"Error listing directory: {str(e)}"
 
+    def query_api(self, method: str, path: str, body: str | None = None) -> str:
+        """
+        Query the backend API with LMS_API_KEY authentication.
+
+        Args:
+            method: HTTP method (GET, POST, PUT, DELETE, etc.)
+            path: API path (e.g., '/items/', '/analytics/completion-rate')
+            body: Optional JSON request body for POST/PUT requests
+
+        Returns:
+            JSON string with status_code and body, or error message
+        """
+        print(f"Tool call: query_api({method} {path})", file=sys.stderr)
+
+        # Check if API key is configured
+        if not self.lms_api_key:
+            return "Error: LMS_API_KEY not configured"
+
+        # Build the URL
+        url = f"{self.agent_api_base_url}{path}"
+
+        # Prepare headers
+        headers = {
+            "Authorization": f"Bearer {self.lms_api_key}",
+            "Content-Type": "application/json",
+        }
+
+        try:
+            # Make the request
+            with httpx.Client() as client:
+                if method.upper() == "GET":
+                    response = client.get(url, headers=headers, timeout=30.0)
+                elif method.upper() == "POST":
+                    response = client.post(
+                        url, headers=headers, json=json.loads(body) if body else None, timeout=30.0
+                    )
+                elif method.upper() == "PUT":
+                    response = client.put(
+                        url, headers=headers, json=json.loads(body) if body else None, timeout=30.0
+                    )
+                elif method.upper() == "DELETE":
+                    response = client.delete(url, headers=headers, timeout=30.0)
+                else:
+                    return f"Error: Unsupported method: {method}"
+
+            # Build result
+            result = {
+                "status_code": response.status_code,
+                "body": response.text,
+            }
+            result_str = json.dumps(result)
+            print(f"API returned status {response.status_code}", file=sys.stderr)
+            return result_str
+
+        except httpx.RequestError as e:
+            return f"Error: Request failed - {str(e)}"
+        except json.JSONDecodeError as e:
+            return f"Error: Invalid JSON body - {str(e)}"
+        except Exception as e:
+            return f"Error: {str(e)}"
+
     def execute_tool(self, tool_name: str, args: dict) -> str:
         """
         Execute a tool with the given arguments.
@@ -257,6 +364,12 @@ class Agent:
             return self.read_file(args.get("path", ""))
         elif tool_name == "list_files":
             return self.list_files(args.get("path", ""))
+        elif tool_name == "query_api":
+            return self.query_api(
+                args.get("method", "GET"),
+                args.get("path", ""),
+                args.get("body")
+            )
         else:
             return f"Error: Unknown tool: {tool_name}"
 

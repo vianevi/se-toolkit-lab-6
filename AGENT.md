@@ -1,6 +1,6 @@
 # Lab Agent
 
-A CLI tool that connects to an LLM and answers questions using tools. The agent can read files and list directories to find accurate information from the project wiki.
+A CLI tool that connects to an LLM and answers questions using tools. The agent can read files, list directories, and query the backend API to find accurate information from the project wiki and live system data.
 
 ## Architecture
 
@@ -32,11 +32,30 @@ A CLI tool that connects to an LLM and answers questions using tools. The agent 
                     │  │ Tools:   │◀───────┘
                     │  │ - read   │
                     │  │ - list   │
+                    │  │ - query  │
                     │  └──────────┘
                     │      │
-                    │      ▼
-                    │  Project Files
-                    │  (wiki/, etc.)
+                    │      ├──────► Project Files (wiki/, etc.)
+                    │      └──────► Backend API
+                    ▼
+             JSON Output
+```
+
+### Task 3: System Agent with query_api
+
+```
+┌─────────────┐     ┌──────────────┐     ┌─────────────────┐
+│   User CLI  │────▶│   agent.py   │────▶│  LLM Provider   │
+│  (question) │     │  (Agentic    │     │ (Qwen Code API) │
+└─────────────┘     │   Loop)      │     └─────────────────┘
+                    │      │               │
+                    │      ▼               │
+                    │  ┌──────────────────┐
+                    │  │ Tools:           │
+                    │  │ - read_file      │──────► Local files
+                    │  │ - list_files     │──────► Local directories
+                    │  │ - query_api      │──────► Backend API (auth)
+                    │  └──────────────────┘
                     ▼
              JSON Output
 ```
@@ -57,7 +76,9 @@ A CLI tool that connects to an LLM and answers questions using tools. The agent 
 
 ## Configuration
 
-The agent reads configuration from `.env.agent.secret` (gitignored):
+The agent reads configuration from environment variables loaded from two files:
+
+### LLM Configuration (`.env.agent.secret`)
 
 ```bash
 # LLM API key
@@ -70,17 +91,43 @@ LLM_API_BASE=http://<vm-ip>:<port>/v1
 LLM_MODEL=qwen3-coder-plus
 ```
 
+### Backend API Configuration (`.env.docker.secret`)
+
+```bash
+# Backend API key for query_api authentication
+LMS_API_KEY=my-secret-api-key
+
+# Optional: Backend API base URL (default: http://localhost:42002)
+AGENT_API_BASE_URL=http://localhost:42002
+```
+
+### All Environment Variables
+
+| Variable             | Source               | Purpose                                      |
+| -------------------- | -------------------- | -------------------------------------------- |
+| `LLM_API_KEY`        | `.env.agent.secret`  | LLM provider API key                         |
+| `LLM_API_BASE`       | `.env.agent.secret`  | LLM API endpoint URL                         |
+| `LLM_MODEL`          | `.env.agent.secret`  | Model name                                   |
+| `LMS_API_KEY`        | `.env.docker.secret` | Backend API key for `query_api` auth         |
+| `AGENT_API_BASE_URL` | Optional             | Backend API base URL (default: localhost:42002) |
+
+> **Important**: The autochecker runs your agent with different credentials. Never hardcode API keys or URLs.
+
 ### Setup
 
-1. Copy the example file:
+1. Copy the example files:
    ```bash
    cp .env.agent.example .env.agent.secret
+   cp .env.docker.example .env.docker.secret
    ```
 
 2. Edit `.env.agent.secret` with your credentials:
    - `LLM_API_KEY`: Your API key from Qwen Code API or OpenRouter
    - `LLM_API_BASE`: The API endpoint URL
    - `LLM_MODEL`: The model name to use
+
+3. Edit `.env.docker.secret` with backend credentials:
+   - `LMS_API_KEY`: The backend API key (shared with docker-compose)
 
 ## Usage
 
@@ -138,7 +185,7 @@ The agent outputs a single JSON object to stdout:
 
 ## Tools
 
-The agent has access to two tools for navigating the project:
+The agent has access to three tools for navigating the project and querying the backend:
 
 ### `read_file`
 
@@ -184,26 +231,81 @@ list_files("wiki")
 # Returns: "git-workflow.md\nrest-api.md\nssh.md\n..."
 ```
 
+### `query_api` (Task 3)
+
+Query the backend API with authentication. Use for data-dependent questions like item counts, analytics, or testing endpoint behavior.
+
+**Parameters:**
+- `method` (string, required): HTTP method (GET, POST, PUT, DELETE)
+- `path` (string, required): API path (e.g., `/items/`, `/analytics/completion-rate`)
+- `body` (string, optional): JSON request body for POST/PUT requests
+
+**Returns:**
+- JSON string with `status_code` and `body`
+- Error message if request fails or authentication is missing
+
+**Authentication:**
+- Uses `LMS_API_KEY` from `.env.docker.secret`
+- Sends key as Bearer token in `Authorization` header
+- Backend returns 401 if key is missing or invalid
+
+**Example:**
+```python
+query_api("GET", "/items/")
+# Returns: '{"status_code": 200, "body": "[...]"}'
+
+query_api("GET", "/items/", "http://localhost:42002")
+# Returns: '{"status_code": 401, "body": "{\"detail\": \"Invalid API key\"}"}'
+```
+
+**When to use:**
+- Data counts: "How many items are in the database?"
+- Live analytics: "What is the completion rate for lab-01?"
+- Testing endpoints: "What status code does /items/ return without auth?"
+- Debugging errors: Query an endpoint that crashes, then read source to diagnose
+
 ## System Prompt Strategy
 
 The system prompt guides the LLM to:
 
-1. **Use tools effectively**: Always use `list_files` to discover wiki structure, then `read_file` to find specific information
-2. **Base answers on evidence**: Answer from actual file contents, not assumptions
-3. **Include source references**: Format as `wiki/filename.md#section-anchor`
+1. **Use tools effectively**: 
+   - Use `list_files` to discover wiki structure
+   - Use `read_file` to read source code or documentation
+   - Use `query_api` for data-dependent questions (counts, analytics, testing endpoints)
+2. **Base answers on evidence**: Answer from actual file contents or API responses, not assumptions
+3. **Include source references**: Format as `wiki/filename.md#section-anchor` (for wiki questions)
 4. **Be concise**: Provide clear, direct answers
+
+### Tool Selection Guide (Task 3)
+
+The system prompt includes explicit guidance on tool selection:
+
+```
+Tool selection guide:
+- For static questions about the codebase (framework, ports, structure), use read_file on source code
+- For data-dependent questions (counts, scores, live data), use query_api
+- For wiki/documentation questions, use list_files and read_file on wiki/
+```
+
+This helps the LLM decide between:
+- **Wiki questions**: "What does the wiki say about SSH?" → `list_files` → `read_file`
+- **System questions**: "What framework does the backend use?" → `read_file` on `backend/app/main.py`
+- **Data questions**: "How many items are in the database?" → `query_api GET /items/`
+- **Debugging questions**: "Why does /analytics/completion-rate crash?" → `query_api` → `read_file` on error location
 
 Example system prompt excerpt:
 ```
 You are a documentation assistant for a software engineering lab.
-You have access to tools to read files and list directories in the project.
+You have access to tools to read files, list directories, and query the backend API.
 
 When answering questions:
-1. Use list_files to discover what files exist in the wiki/ directory
-2. Use read_file to read the contents of relevant files
-3. Find the specific section that answers the question
-4. Provide a clear answer based on the file contents
-5. Include the source as: wiki/filename.md#section-anchor
+1. Use list_files to discover what files exist in a directory
+2. Use read_file to read source code or documentation files
+3. Use query_api to query the running backend API for:
+   - Data counts (e.g., "how many items")
+   - Live analytics (e.g., completion rates, top learners)
+   - Testing endpoint behavior (e.g., status codes, error responses)
+   - Debugging API errors
 ```
 
 ## Error Handling
@@ -266,3 +368,51 @@ Your `LLM_API_KEY` is incorrect or expired.
 ### Rate limit errors
 
 Free-tier models have daily limits. Wait 24 hours or switch to a different provider.
+
+## Lessons Learned (Task 3)
+
+### Architecture Decisions
+
+1. **Two environment files**: Separating LLM credentials (`.env.agent.secret`) from backend API credentials (`.env.docker.secret`) keeps concerns isolated and matches the Docker compose setup.
+
+2. **Bearer token authentication**: The backend uses `Authorization: Bearer <API_KEY>` header format, which is standard for REST APIs and works with FastAPI's `HTTPBearer` security.
+
+3. **httpx over requests**: Using `httpx` instead of `requests` provides better async support for future enhancements and is more modern.
+
+4. **Tool description matters**: The LLM relies heavily on tool descriptions to decide which tool to use. Being explicit about when to use `query_api` vs `read_file` significantly improves tool selection accuracy.
+
+### Benchmark Iteration Strategy
+
+The key to passing the benchmark is systematic iteration:
+
+1. **Run eval and stop at first failure**: `run_eval.py` stops at the first failure, making it easy to focus on one issue at a time.
+
+2. **Check tool usage first**: If the wrong tool was called, improve the tool description or system prompt guidance.
+
+3. **Check answer content**: If the right tool was called but the answer is wrong, check:
+   - Did the API return an error?
+   - Did the LLM misinterpret the response?
+   - Is the answer missing key keywords?
+
+4. **Common fixes**:
+   - **Division by zero bug**: The `/analytics/completion-rate` endpoint crashes when no learners exist. The agent needs to query the endpoint, see the error, then read `backend/app/routers/analytics.py` to find the bug.
+   - **Top learners bug**: The `/analytics/top-learners` endpoint can fail if data is None. The agent needs to trace the error to the source code.
+   - **Request lifecycle question**: This requires reading both `docker-compose.yml` and `backend/app/main.py` to trace the full request path.
+
+### Key Insights
+
+- **Tool chaining is essential**: Complex questions require multiple tool calls. For example, debugging an API error requires `query_api` first, then `read_file` on the source code.
+
+- **Source is optional for system questions**: Questions about the running system (framework, ports, status codes) don't have wiki sources. The `source` field is correctly left empty for these.
+
+- **Environment variable flexibility**: Reading all config from environment variables (not hardcoded) is critical for the autochecker to inject its own credentials.
+
+### Final Eval Score
+
+*To be filled after running the benchmark with proper LLM credentials.*
+
+The agent is designed to pass all 10 local questions and the additional hidden questions from the autochecker. The key is having a genuinely working agent that can:
+- Select the right tool for each question type
+- Chain tools for multi-step debugging
+- Handle API errors gracefully
+- Extract relevant information from source code
