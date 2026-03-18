@@ -1,16 +1,14 @@
-.DS_Store
-.venv
+# Secrets
+.env.agent.secret
+.env
+
+# Python
 __pycache__/
+*.pyc
+.venv/
+venv/
+env/
 
-*.secret
-
-.ruff_cache
-.pytest_cache
-
-.direnv
-
-.lycheecache
-
-tmp
-
-**/settings.local.json
+# IDE
+.vscode/
+.idea/
