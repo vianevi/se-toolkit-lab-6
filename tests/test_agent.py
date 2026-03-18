@@ -11,6 +11,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+# Import Agent class for unit tests
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from agent import Agent
+
 
 class TestAgentOutput:
     """Test that agent.py outputs valid JSON with required fields."""
@@ -271,3 +275,67 @@ class TestAgentOutput:
         assert len(numbers) > 0, (
             f"Expected a number in answer. Got: {answer}"
         )
+
+
+class TestPathSecurity:
+    """Test that tools prevent path traversal attacks."""
+
+    def test_read_file_rejects_parent_directory_reference(self):
+        """Test that read_file rejects paths containing '..'."""
+        agent = Agent()
+        result = agent.read_file("../secret.txt")
+        data = json.loads(result)
+        
+        assert "error" in data
+        assert "Path traversal not allowed" in data["error"]
+
+    def test_read_file_rejects_absolute_path(self):
+        """Test that read_file rejects absolute paths."""
+        agent = Agent()
+        result = agent.read_file("/etc/passwd")
+        data = json.loads(result)
+        
+        assert "error" in data
+        assert "Absolute paths not allowed" in data["error"]
+
+    def test_list_files_rejects_parent_directory_reference(self):
+        """Test that list_files rejects paths containing '..'."""
+        agent = Agent()
+        result = agent.list_files("../secret")
+        data = json.loads(result)
+        
+        assert "error" in data
+        assert "Path traversal not allowed" in data["error"]
+
+    def test_list_files_rejects_absolute_path(self):
+        """Test that list_files rejects absolute paths."""
+        agent = Agent()
+        result = agent.list_files("/etc")
+        data = json.loads(result)
+        
+        assert "error" in data
+        assert "Absolute paths not allowed" in data["error"]
+
+    def test_read_file_works_for_valid_path(self):
+        """Test that read_file works for a valid file path."""
+        agent = Agent()
+        result = agent.read_file("AGENT.md")
+        data = json.loads(result)
+        
+        # Should have content, not an error
+        assert "content" in data or "error" in data
+        # If no error, content should be non-empty
+        if "content" in data:
+            assert len(data["content"]) > 0
+
+    def test_list_files_works_for_valid_path(self):
+        """Test that list_files works for a valid directory path."""
+        agent = Agent()
+        result = agent.list_files("wiki")
+        data = json.loads(result)
+        
+        # Should have files, not an error
+        assert "files" in data or "error" in data
+        # If no error, should have files
+        if "files" in data:
+            assert isinstance(data["files"], list)

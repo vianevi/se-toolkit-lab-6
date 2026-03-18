@@ -24,38 +24,75 @@ class Agent:
         self.project_root = os.getcwd()
     
     def read_file(self, filepath: str) -> str:
-        """Read a file from the filesystem."""
+        """Read a file from the filesystem with path security."""
         try:
-            full_path = os.path.join(self.project_root, filepath.lstrip('/'))
-            if not os.path.exists(full_path):
+            # Security: reject path traversal attempts
+            if '..' in filepath:
+                return json.dumps({"error": "Path traversal not allowed: " + filepath})
+            if filepath.startswith('/'):
+                return json.dumps({"error": "Absolute paths not allowed: " + filepath})
+            
+            # Resolve the full path
+            full_path = os.path.join(self.project_root, filepath)
+            resolved_path = os.path.abspath(full_path)
+            resolved_root = os.path.abspath(self.project_root)
+            
+            # Security: ensure path is within project directory
+            if not resolved_path.startswith(resolved_root + os.sep) and resolved_path != resolved_root:
+                return json.dumps({"error": "Path outside project directory: " + filepath})
+            
+            if not os.path.exists(resolved_path):
                 return json.dumps({"error": f"File not found: {filepath}"})
-            
-            with open(full_path, 'r', encoding='utf-8') as f:
+
+            with open(resolved_path, 'r', encoding='utf-8') as f:
                 content = f.read()
-            
+
             return json.dumps({
                 "filepath": filepath,
-                "content": content[:2000] + "..." if len(content) > 2000 else content
+                "content": content
             })
         except Exception as e:
             return json.dumps({"error": str(e)})
     
     def list_files(self, directory: str = ".") -> str:
-        """List files in a directory."""
+        """List files in a directory with path security."""
         try:
-            full_path = os.path.join(self.project_root, directory.lstrip('/'))
-            if not os.path.exists(full_path):
+            # Security: reject path traversal attempts
+            if '..' in directory:
+                return json.dumps({"error": "Path traversal not allowed: " + directory})
+            if directory.startswith('/'):
+                return json.dumps({"error": "Absolute paths not allowed: " + directory})
+            
+            # Resolve the full path
+            full_path = os.path.join(self.project_root, directory)
+            resolved_path = os.path.abspath(full_path)
+            resolved_root = os.path.abspath(self.project_root)
+            
+            # Security: ensure path is within project directory
+            if not resolved_path.startswith(resolved_root + os.sep) and resolved_path != resolved_root:
+                return json.dumps({"error": "Path outside project directory: " + directory})
+            
+            if not os.path.exists(resolved_path):
                 return json.dumps({"error": f"Directory not found: {directory}"})
             
+            if not os.path.isdir(resolved_path):
+                return json.dumps({"error": f"Not a directory: {directory}"})
+
             files = []
-            for item in os.listdir(full_path):
-                item_path = os.path.join(full_path, item)
+            for item in os.listdir(resolved_path):
+                # Skip hidden files (except .qwen) and __pycache__
+                if item.startswith('.') and item != '.qwen':
+                    continue
+                if item == '__pycache__':
+                    continue
+                    
+                item_path = os.path.join(resolved_path, item)
                 files.append({
                     "name": item,
                     "type": "directory" if os.path.isdir(item_path) else "file",
                     "size": os.path.getsize(item_path) if os.path.isfile(item_path) else 0
                 })
-            
+
             return json.dumps({"directory": directory, "files": files[:100]})
         except Exception as e:
             return json.dumps({"error": str(e)})
