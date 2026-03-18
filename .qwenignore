@@ -1,0 +1,3 @@
+# Qwen ignore file
+# Explicitly include agent.py for autochecker
+!agent.py

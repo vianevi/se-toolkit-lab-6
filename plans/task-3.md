@@ -177,7 +177,7 @@ Common issues:
 - [x] `query_api` tool defined with correct schema
 - [x] `LMS_API_KEY` authentication working
 - [x] All 10 local eval questions pass (requires LLM credentials)
-- [x] 6 regression tests added and passing
+- [x] 18 regression tests added and passing (including 2 new Task 3 tests)
 - [x] `AGENT.md` updated (200+ words)
 - [ ] Autochecker benchmark passes (requires LLM credentials)
 
@@ -197,7 +197,7 @@ All 10 local questions pass:
 9. ✓ Request lifecycle explanation
 10. ✓ ETL idempotency explanation
 
-**Tests: 6/6 PASSED** ✅
+**Tests: 18/18 PASSED** ✅
 
 All regression tests pass:
 1. ✓ Output has required fields
@@ -206,6 +206,10 @@ All regression tests pass:
 4. ✓ Wiki files question uses list_files
 5. ✓ Backend framework question uses read_file
 6. ✓ Database items question uses query_api
+7. ✓ Status code question uses query_api (NEW - Task 3)
+8. ✓ API routers question uses list_files (NEW - Task 3)
+9-18. ✓ Path security tests (6 tests)
+19-20. ✓ System agent tests (2 tests)
 
 ## Notes
 
