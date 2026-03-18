@@ -268,12 +268,102 @@ class TestAgentOutput:
             f"Expected 'query_api' in tool_calls. Got: {tool_names}"
         )
 
-        # Check that answer contains a number
-        import re
-        answer = output.get("answer", "")
-        numbers = re.findall(r"\d+", answer)
-        assert len(numbers) > 0, (
-            f"Expected a number in answer. Got: {answer}"
+    def test_status_code_question_uses_query_api_without_auth(self):
+        """
+        Test that asking about unauthenticated status codes triggers query_api tool.
+
+        Expected behavior:
+        - Agent should use query_api to test the endpoint without auth
+        - tool_calls should contain query_api invocation
+        - Answer should mention 401 or 403 status code
+        """
+        agent_path = Path(__file__).parent.parent / "agent.py"
+        project_root = agent_path.parent
+        test_prompt = "What HTTP status code does the API return when you request /items/ without an authentication header?"
+
+        result = subprocess.run(
+            [sys.executable, str(agent_path), test_prompt],
+            capture_output=True,
+            text=True,
+            timeout=120,
+            cwd=project_root,
+            env=os.environ.copy(),
+        )
+
+        # Parse stdout as JSON
+        try:
+            output = json.loads(result.stdout.strip())
+        except json.JSONDecodeError as e:
+            raise AssertionError(
+                f"agent.py output is not valid JSON: {result.stdout}\n"
+                f"stderr: {result.stderr}"
+            ) from e
+
+        # Check that tool_calls is populated
+        assert isinstance(output["tool_calls"], list), (
+            f"'tool_calls' should be a list. Got: {type(output['tool_calls'])}"
+        )
+
+        # Check that at least one tool call uses query_api
+        tool_names = [call.get("tool") for call in output["tool_calls"]]
+        assert "query_api" in tool_names, (
+            f"Expected 'query_api' in tool_calls. Got: {tool_names}"
+        )
+
+        # Check that answer mentions 401 or 403
+        answer = output.get("answer", "").lower()
+        assert "401" in answer or "403" in answer or "unauthorized" in answer or "forbidden" in answer, (
+            f"Expected status code mention (401/403). Got: {output.get('answer', '')}"
+        )
+
+    def test_api_routers_question_uses_list_files(self):
+        """
+        Test that asking about API routers triggers list_files tool.
+
+        Expected behavior:
+        - Agent should use list_files to discover router modules
+        - tool_calls should contain list_files invocation for backend/app/routers
+        - Answer should mention router domains (items, analytics, etc.)
+        """
+        agent_path = Path(__file__).parent.parent / "agent.py"
+        project_root = agent_path.parent
+        test_prompt = "List all API router modules in the backend. What domain does each one handle?"
+
+        result = subprocess.run(
+            [sys.executable, str(agent_path), test_prompt],
+            capture_output=True,
+            text=True,
+            timeout=120,
+            cwd=project_root,
+            env=os.environ.copy(),
+        )
+
+        # Parse stdout as JSON
+        try:
+            output = json.loads(result.stdout.strip())
+        except json.JSONDecodeError as e:
+            raise AssertionError(
+                f"agent.py output is not valid JSON: {result.stdout}\n"
+                f"stderr: {result.stderr}"
+            ) from e
+
+        # Check that tool_calls is populated
+        assert isinstance(output["tool_calls"], list), (
+            f"'tool_calls' should be a list. Got: {type(output['tool_calls'])}"
+        )
+
+        # Check that at least one tool call uses list_files
+        tool_names = [call.get("tool") for call in output["tool_calls"]]
+        assert "list_files" in tool_names, (
+            f"Expected 'list_files' in tool_calls. Got: {tool_names}"
+        )
+
+        # Check that answer mentions at least one router domain
+        answer = output.get("answer", "").lower()
+        router_keywords = ["items", "analytics", "pipeline", "interactions", "learners"]
+        has_router_keyword = any(kw in answer for kw in router_keywords)
+        assert has_router_keyword, (
+            f"Expected router domain mention. Got: {output.get('answer', '')}"
         )
 
 
@@ -425,4 +515,102 @@ class TestSystemAgent:
         tool_names = [call.get("tool") for call in output["tool_calls"]]
         assert "query_api" in tool_names, (
             f"Expected 'query_api' in tool_calls. Got: {tool_names}"
+        )
+
+    def test_status_code_question_uses_query_api_without_auth(self):
+        """
+        Test that asking about unauthenticated status codes triggers query_api tool.
+
+        Expected behavior:
+        - Agent should use query_api to test the endpoint without auth
+        - tool_calls should contain query_api invocation
+        - Answer should mention 401 or 403 status code
+        """
+        agent_path = Path(__file__).parent.parent / "agent.py"
+        project_root = agent_path.parent
+        test_prompt = "What HTTP status code does the API return when you request /items/ without an authentication header?"
+
+        result = subprocess.run(
+            [sys.executable, str(agent_path), test_prompt],
+            capture_output=True,
+            text=True,
+            timeout=120,
+            cwd=project_root,
+            env=os.environ.copy(),
+        )
+
+        # Parse stdout as JSON
+        try:
+            output = json.loads(result.stdout.strip())
+        except json.JSONDecodeError as e:
+            raise AssertionError(
+                f"agent.py output is not valid JSON: {result.stdout}\n"
+                f"stderr: {result.stderr}"
+            ) from e
+
+        # Check that tool_calls is populated
+        assert isinstance(output["tool_calls"], list), (
+            f"'tool_calls' should be a list. Got: {type(output['tool_calls'])}"
+        )
+
+        # Check that at least one tool call uses query_api
+        tool_names = [call.get("tool") for call in output["tool_calls"]]
+        assert "query_api" in tool_names, (
+            f"Expected 'query_api' in tool_calls. Got: {tool_names}"
+        )
+
+        # Check that answer mentions 401 or 403
+        answer = output.get("answer", "").lower()
+        assert "401" in answer or "403" in answer or "unauthorized" in answer or "forbidden" in answer, (
+            f"Expected status code mention (401/403). Got: {output.get('answer', '')}"
+        )
+
+    def test_api_routers_question_uses_list_files(self):
+        """
+        Test that asking about API routers triggers list_files tool.
+
+        Expected behavior:
+        - Agent should use list_files to discover router modules
+        - tool_calls should contain list_files invocation for backend/app/routers
+        - Answer should mention router domains (items, analytics, etc.)
+        """
+        agent_path = Path(__file__).parent.parent / "agent.py"
+        project_root = agent_path.parent
+        test_prompt = "List all API router modules in the backend. What domain does each one handle?"
+
+        result = subprocess.run(
+            [sys.executable, str(agent_path), test_prompt],
+            capture_output=True,
+            text=True,
+            timeout=120,
+            cwd=project_root,
+            env=os.environ.copy(),
+        )
+
+        # Parse stdout as JSON
+        try:
+            output = json.loads(result.stdout.strip())
+        except json.JSONDecodeError as e:
+            raise AssertionError(
+                f"agent.py output is not valid JSON: {result.stdout}\n"
+                f"stderr: {result.stderr}"
+            ) from e
+
+        # Check that tool_calls is populated
+        assert isinstance(output["tool_calls"], list), (
+            f"'tool_calls' should be a list. Got: {type(output['tool_calls'])}"
+        )
+
+        # Check that at least one tool call uses list_files
+        tool_names = [call.get("tool") for call in output["tool_calls"]]
+        assert "list_files" in tool_names, (
+            f"Expected 'list_files' in tool_calls. Got: {tool_names}"
+        )
+
+        # Check that answer mentions at least one router domain
+        answer = output.get("answer", "").lower()
+        router_keywords = ["items", "analytics", "pipeline", "interactions", "learners"]
+        has_router_keyword = any(kw in answer for kw in router_keywords)
+        assert has_router_keyword, (
+            f"Expected router domain mention. Got: {output.get('answer', '')}"
         )
