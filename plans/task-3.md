@@ -115,6 +115,12 @@ After first implementation, run:
 uv run run_eval.py
 ```
 
+**Result**: LLM API unavailable (Qwen proxy at 10.93.26.33:8000 not responding)
+
+The agent implementation is complete, but cannot be tested without LLM access. The backend API is working correctly:
+- `GET /items/` with auth: returns items list
+- `GET /items/` without auth: returns 401
+
 Expected initial failures and fixes:
 
 | Question | Likely Issue | Fix |
@@ -128,17 +134,19 @@ Expected initial failures and fixes:
 ### Implementation Status
 
 - [x] `query_api` tool schema added
-- [x] `query_api` method implemented with `httpx`
+- [x] `query_api` method implemented with `requests`
 - [x] `LMS_API_KEY` authentication using Bearer token
 - [x] `AGENT_API_BASE_URL` support (defaults to `http://localhost:42002`)
 - [x] `SYSTEM_PROMPT` updated with tool selection guidance
 - [x] `execute_tool` routes `query_api` calls
+- [x] Path security implemented for all file operations
+- [x] 6 path security unit tests added (all passing)
 
 ### Backend Verification
 
 Tested backend API directly:
-- `GET /items/` with auth: returns 44 items
-- `GET /items/` without auth: returns 401
+- `GET /items/` with auth: returns items successfully
+- `GET /items/` without auth: returns 401 Unauthorized
 - ETL pipeline populates data via `POST /pipeline/sync`
 
 ### Iteration Strategy
@@ -148,6 +156,14 @@ Tested backend API directly:
 3. **Check answer content** - is the answer complete?
 4. **Adjust system prompt** - clarify tool selection or answer format
 5. **Re-run** and move to next failure
+6. **Repeat** until all 10 pass
+
+Common issues:
+- **Wrong tool**: Improve tool descriptions in schema
+- **Missing auth**: Check `LMS_API_KEY` is loaded and sent
+- **Timeout**: Reduce max iterations or optimize tool calls
+- **Incomplete answer**: Expand system prompt guidance
+- **LLM unavailable**: Check Qwen proxy is running (`docker compose ps` in ~/qwen-code-oai-proxy)
 6. **Repeat** until all 10 pass
 
 Common issues:

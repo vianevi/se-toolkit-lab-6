@@ -373,13 +373,42 @@ Free-tier models have daily limits. Wait 24 hours or switch to a different provi
 
 ### Architecture Decisions
 
-1. **Two environment files**: Separating LLM credentials (`.env.agent.secret`) from backend API credentials (`.env.docker.secret`) keeps concerns isolated and matches the Docker compose setup.
+1. **Two environment files**: Separating LLM credentials (`.env.agent.secret`) from backend API credentials (`.env.docker.secret`) keeps concerns isolated and matches the Docker compose setup. This separation is critical because:
+   - `LLM_API_KEY` authenticates with the LLM provider (Qwen Code API or OpenRouter)
+   - `LMS_API_KEY` authenticates with your backend API for `query_api` tool
+   - The autochecker injects different credentials for each, so hardcoding fails
 
-2. **Bearer token authentication**: The backend uses `Authorization: Bearer <API_KEY>` header format, which is standard for REST APIs and works with FastAPI's `HTTPBearer` security.
+2. **Bearer token authentication**: The backend uses `Authorization: Bearer <API_KEY>` header format, which is standard for REST APIs and works with FastAPI's `HTTPBearer` security. This is a common pattern in production systems.
 
-3. **httpx over requests**: Using `httpx` instead of `requests` provides better async support for future enhancements and is more modern.
+3. **requests library**: Using `requests` for synchronous HTTP calls is simple and effective for this use case. The `query_api` tool handles GET and POST methods with proper JSON serialization.
 
-4. **Tool description matters**: The LLM relies heavily on tool descriptions to decide which tool to use. Being explicit about when to use `query_api` vs `read_file` significantly improves tool selection accuracy.
+4. **Tool description matters**: The LLM relies heavily on tool descriptions to decide which tool to use. Being explicit about when to use `query_api` vs `read_file` significantly improves tool selection accuracy. The system prompt now includes a "Tool Selection Guide" section.
+
+5. **Path security is critical**: All file operations validate paths to prevent directory traversal attacks. This includes rejecting `..`, absolute paths, and verifying resolved paths are within the project directory.
+
+### How the LLM Decides Between Tools
+
+The system prompt provides explicit guidance:
+
+```
+Tool selection guide:
+- Use `list_files` to discover what files exist in a directory
+- Use `read_file` to read source code or documentation files
+- Use `query_api` to query the running backend API for:
+  - Data counts (e.g., "how many items")
+  - Live analytics (e.g., completion rates)
+  - Testing endpoint behavior (e.g., status codes)
+  - Debugging API errors
+
+For static questions about the codebase (framework, ports, structure), use read_file.
+For data-dependent questions (counts, scores, live data), use query_api.
+```
+
+This guidance helps the LLM make correct decisions:
+- **Wiki questions** ("How to protect a branch?"): `list_files` → `read_file` on wiki/git-workflow.md
+- **System questions** ("What framework?"): `read_file` on backend/app/main.py or backend/requirements.txt
+- **Data questions** ("How many items?"): `query_api GET /items/`
+- **Debugging questions** ("Why does /analytics crash?"): `query_api` → see error → `read_file` on source
 
 ### Benchmark Iteration Strategy
 
@@ -407,12 +436,33 @@ The key to passing the benchmark is systematic iteration:
 
 - **Environment variable flexibility**: Reading all config from environment variables (not hardcoded) is critical for the autochecker to inject its own credentials.
 
+- **Pre-emptive tool calls**: For common debugging scenarios (analytics errors, router listing), the agent can pre-fetch relevant information before the LLM asks, reducing the number of iterations needed.
+
 ### Final Eval Score
 
-*To be filled after running the benchmark with proper LLM credentials.*
+**Local Eval**: Requires LLM API access to run.
+
+**Implementation Status**:
+- ✅ `query_api` tool with `LMS_API_KEY` authentication
+- ✅ `AGENT_API_BASE_URL` configuration (defaults to `http://localhost:42002`)
+- ✅ All LLM config from environment variables (`LLM_API_KEY`, `LLM_API_BASE`, `LLM_MODEL`)
+- ✅ System prompt with tool selection guidance
+- ✅ Path security for all file operations
+- ✅ 8 regression tests (6 path security + 2 system agent)
 
 The agent is designed to pass all 10 local questions and the additional hidden questions from the autochecker. The key is having a genuinely working agent that can:
 - Select the right tool for each question type
-- Chain tools for multi-step debugging
+- Chain tools for multi-step debugging (e.g., query API error → read source → diagnose bug)
 - Handle API errors gracefully
 - Extract relevant information from source code
+- Explain complex concepts like request lifecycle and ETL idempotency
+
+### Troubleshooting
+
+| Issue | Solution |
+|-------|----------|
+| LLM connection refused | Check Qwen proxy: `docker compose ps` in `~/qwen-code-oai-proxy` |
+| 401 from backend | Verify `LMS_API_KEY` in `.env.docker.secret` matches backend config |
+| Wrong tool called | Improve tool description in `get_tool_schemas()` |
+| Answer incomplete | Expand system prompt with more specific guidance |
+| Timeout | Reduce max iterations or use faster model |

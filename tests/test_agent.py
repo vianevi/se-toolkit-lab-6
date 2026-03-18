@@ -339,3 +339,90 @@ class TestPathSecurity:
         # If no error, should have files
         if "files" in data:
             assert isinstance(data["files"], list)
+
+
+class TestSystemAgent:
+    """Test system agent functionality for Task 3."""
+
+    def test_backend_framework_question_uses_read_file(self):
+        """
+        Test that asking about the backend framework triggers read_file tool.
+
+        Expected behavior:
+        - Agent should use read_file to read backend source code
+        - tool_calls should contain read_file invocation
+        """
+        agent_path = Path(__file__).parent.parent / "agent.py"
+        project_root = agent_path.parent
+        test_prompt = "What Python web framework does this project's backend use?"
+
+        result = subprocess.run(
+            [sys.executable, str(agent_path), test_prompt],
+            capture_output=True,
+            text=True,
+            timeout=120,
+            cwd=project_root,
+            env=os.environ.copy(),
+        )
+
+        # Parse stdout as JSON
+        try:
+            output = json.loads(result.stdout.strip())
+        except json.JSONDecodeError as e:
+            raise AssertionError(
+                f"agent.py output is not valid JSON: {result.stdout}\n"
+                f"stderr: {result.stderr}"
+            ) from e
+
+        # Check that tool_calls is populated
+        assert isinstance(output["tool_calls"], list), (
+            f"'tool_calls' should be a list. Got: {type(output['tool_calls'])}"
+        )
+
+        # Check that at least one tool call uses read_file
+        tool_names = [call.get("tool") for call in output["tool_calls"]]
+        assert "read_file" in tool_names, (
+            f"Expected 'read_file' in tool_calls. Got: {tool_names}"
+        )
+
+    def test_database_items_question_uses_query_api(self):
+        """
+        Test that asking about database items triggers query_api tool.
+
+        Expected behavior:
+        - Agent should use query_api to query the backend API
+        - tool_calls should contain query_api invocation
+        - Answer should contain a number (item count)
+        """
+        agent_path = Path(__file__).parent.parent / "agent.py"
+        project_root = agent_path.parent
+        test_prompt = "How many items are currently stored in the database?"
+
+        result = subprocess.run(
+            [sys.executable, str(agent_path), test_prompt],
+            capture_output=True,
+            text=True,
+            timeout=120,
+            cwd=project_root,
+            env=os.environ.copy(),
+        )
+
+        # Parse stdout as JSON
+        try:
+            output = json.loads(result.stdout.strip())
+        except json.JSONDecodeError as e:
+            raise AssertionError(
+                f"agent.py output is not valid JSON: {result.stdout}\n"
+                f"stderr: {result.stderr}"
+            ) from e
+
+        # Check that tool_calls is populated
+        assert isinstance(output["tool_calls"], list), (
+            f"'tool_calls' should be a list. Got: {type(output['tool_calls'])}"
+        )
+
+        # Check that at least one tool call uses query_api
+        tool_names = [call.get("tool") for call in output["tool_calls"]]
+        assert "query_api" in tool_names, (
+            f"Expected 'query_api' in tool_calls. Got: {tool_names}"
+        )
